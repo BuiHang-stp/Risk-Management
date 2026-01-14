@@ -1,0 +1,138 @@
+---
+title: "10.3 Rating transition matrices & 10.4 & 10.8 Risk-neutral valuation"
+---
+```{r}
+options(digits = 10)
+```
+
+### 10.3 (Rating transition matrices)
+```{r}
+M <- matrix(c(0.8, 0.15, 0.05,
+              0.1, 0.7,  0.2,
+              0,   0,    1), ncol = 3, byrow = TRUE)
+#thi cuối kì thì viết ma trận là được 
+```
+
+```{r}
+M
+```
+
+```{r}
+M %*% M  # phép nhân ma trận 3x3
+```
+
+### Bài thầy cho trên lớp
+### E1: Ma trận theo 10.3
+```{r}
+#     A     B     C     D
+# A   0.70   ?    0.12  0.02
+# B   0.18  0.61   ?    0.05
+# C   0.08  0.16  0.65    ?
+# D     ?     ?     ?     ?
+
+# A, B, C default after 3 years
+```
+
+```{r}
+M <- matrix(c(
+  0.70, 0.16, 0.12, 0.02,
+  0.18, 0.61, 0.16, 0.05,
+  0.08, 0.16, 0.65, 0.11,
+  0,    0,    0,    1  # miễn sao tổng ngang là 1
+), ncol = 4, byrow = TRUE)
+M 
+```
+
+```{r}
+M3 <- M %*% M %*% M #ma trận 4x4
+M3
+```
+
+### EX2 Theo 10.4
+```{r}
+# Consider a firm whose asset value follows a geometric Brownian motion with drift μV = 0.15 and volatility σV = 0.26. Assume that the current (t = 0) value of the assets is equal to 300, that the nominal value of the liabilities is equal to 120 (all in MEUR) and that the maturity of the liabilities is in T = 2 (year). Calculate the default probability of the firm.
+```
+
+```{r}
+muV    <- 0.15
+sigmaV <- 0.26
+V0     <- 300   # current value of assets
+D      <- 120   # liabilities (nominal)
+T      <- 2     # maturity in years
+```
+
+```{r}
+##pnorm((log(D/V0) - (muV - sigmaV^2/2) * T) / (sigmaV * sqrt(T)))
+
+pnorm((log(120/300) - (0.15 - 0.26^2/2)*2) / (0.26*sqrt(2)))
+```
+
+### 10.4 Credit risk in the Merton model
+```{r}
+# Consider a firm whose asset value follows a geometric Brownian motion with drift µV = 0.1 and volatility σV = 0.2. Assume that the current (t = 0) value of the assets is equal to 200, that the nominal value of the liabilities is equal to 100 (all in M EUR) and that the maturity of the liabilities is in T = 1 (year). Calculate the default probability of the firm.
+```
+
+```{r}
+muV    <- 0.1
+sigmaV <- 0.2
+V0     <- 200   # current value of assets
+D      <- 100   # liabilities (nominal)
+T      <- 1   # maturity in years
+```
+
+```{r}
+##pnorm((log(D/V0) - (muV - sigmaV^2/2) * T) / (sigmaV * sqrt(T)))
+
+pnorm((log(1/2) - (0.1-0.04/2)) / 0.2)
+```
+
+### 10.8 Risk-neutral valuation
+```{r}
+#Consider a simple one-period model for the price of a defaultable zero-coupon bond with nominal value 1, maturity T = 1 (year) and with deterministic recovery rate 1 − δ = 0.4. The default probability of the bond is 1 − p = 0.01, the risk-free simple interest rate is 0.025, and the current (t = 0) price of the bond is p1(0, 1) = 0.961. The price of the bond in T = 1 is thus either 1 (in the case of no default) or 0.4 (in the case of default).
+```
+
+### a, the expected payoff of the bond
+```{r}
+# E[payoff] = 1*p(no default) + (1−𝛿)*p( default) = p*1 + (1-p)*(1−𝛿)
+
+# Nominal value = 1
+# Recovery rate 1−𝛿=0.4
+# Default probability 1−𝑝=0.01⇒𝑝=0.99
+
+0.99*1+0.01*0.4
+```
+
+### b) The corresponding risk-neutral default probability
+```{r}
+# q = risk-neutral default probability
+# 1−q = risk-neutral no-default probability
+# Recovery rate: 1−δ=0.4
+# Risk-free rate: r=0.025
+# Giá bond tại t=0: p1(0,1)=0.961
+```
+
+```{r}
+# Given data
+price <- 0.961
+r     <- 0.025
+recovery <- 0.4
+
+# Risk-neutral default probability q from:
+# price = ((1-q)*1 + q*recovery) / (1+r)
+# q = (1 - price *(1+r))/(1 - recovery)
+
+q <- (1 - price*(1+r))/(1 - recovery)
+q
+
+#Risk-neutral default probability ≈ 2.41%
+```
+## c) Compute the price and replicating portfolio
+```{r}
+A <- matrix(c(0.4, 1.025, #payoff trong default
+              1,   1.025), ncol = 2, byrow = TRUE)  # payoff trong no default
+b <- c(1, 0) #defalut = 1, no default = 0
+solve(A, b = b)
+
+#ξ1 = -1.6667 and ξ2=1.6260 the units of the defaultable bond and the amount of cash in our portfolio
+```
+

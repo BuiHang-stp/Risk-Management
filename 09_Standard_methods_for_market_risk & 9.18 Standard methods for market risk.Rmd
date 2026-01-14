@@ -1,0 +1,376 @@
+---
+title: "09_Standard_methods_for_market_risk & 9.18 Standard methods for market risk"
+---
+```{r}
+library(nvmix) # for rNorm(), fitStudent(), rStudent()
+library(xts) # for na.fill()
+library(qrmdata) # for the data
+library(qrmtools) # for the data analysis
+```
+
+## 09_Standard_methods_for_market_risk
+### 1 Working with the (BMW, Siemens) data
+```{r}
+data(EURSTX_const)
+db <- EURSTX_const
+```
+
+```{r}
+## Pick out the sub-database of stock prices and fill gaps
+time <- c("2000-01-03", "2009-12-31")
+S <- db[paste0(time, collapse = "/"), c("BMW.DE", "SIE.DE")] # pick out data (data.frame)
+str(S)
+S <- na.omit(S) # fill NAs 
+```
+
+## Compute the risk-factor changes
+```{r}
+X <- returns(S) # compute log-returns
+X <- as.matrix(X)
+```
+
+### 2 Implement (and document) some auxiliary functions
+```{r}
+loss_operator <- function(x, weights)
+    -rowSums(expm1(x) * matrix(weights, nrow = nrow(x), ncol = length(weights), byrow = TRUE))
+
+risk_measure <- function(S, lambda, alpha,
+                         method = c("Var.Cov", "hist.sim"),
+                         ...)
+{
+    ## Input checks and conversions
+    if(!is.matrix(S)) S <- rbind(S, deparse.level = 0L) 
+    stopifnot(0 < alpha, alpha < 1, 
+              
+              length(lambda) == ncol(S), lambda > 0) 
+    
+    method <- match.arg(method) 
+    
+
+    ## Ingredients required for *all* methods
+    X <- returns(S) # compute risk-factor changes
+    if(!length(X)) stop("'S' should have more than just one line")
+    S. <- as.numeric(tail(S, n = 1)) 
+    w. <- lambda * S. 
+
+    ## Method switch 
+    switch(method,
+           
+# variance-covariance method
+           "Var.Cov" = { 
+               mu.hat <- colMeans(X) 
+               Sigma.hat <- var(X) 
+               L.delta.mean <- -sum(w. * mu.hat) 
+               L.delta.sd <- sqrt(t(w.) %*% Sigma.hat %*% w.) 
+## Compute VaR and ES and return
+               qa <- qnorm(alpha)
+               list(VaR = L.delta.mean + L.delta.sd * qa,
+                    ES  = L.delta.mean + L.delta.sd * dnorm(qa) / (1-alpha),
+                    mu    = mu.hat, 
+                    Sigma = Sigma.hat) 
+           },
+
+# historical simulation method
+           "hist.sim" = { 
+               L <- loss_operator(X, weights = w.) 
+               list(VaR = VaR_np(L, alpha),
+                    ES  =  ES_np(L, alpha))
+           },
+         stop("Wrong 'method'")
+    )
+}
+```
+
+### 3 Compute VaR and ES for the standard methods
+### thầy cho lamda và alpha, thay số phần này
+```{r}
+lambda <- c(1, 10) # thầy sẽ cho nhớ thay
+alpha <- 0.99
+```
+
+## Estimate VaR and ES with the various methods
+```{r}
+var.cov  <- risk_measure(S, lambda = lambda, alpha = alpha, method = "Var.Cov")
+hist.sim <- risk_measure(S, lambda = lambda, alpha = alpha, method = "hist.sim")
+```
+
+## Pick out VaR and ES for all methods
+```{r}
+(rm <- rbind("Var.-cov."      = unlist(var.cov[c("VaR", "ES")]),
+             "Hist. sim."     = unlist(hist.sim[c("VaR", "ES")])))
+# [Giải thích cho output]
+# Var.-cov
+# VaR ≈ 33.06: on about 99% of days, the 1-day loss is expected to be no more than ~33.06; about 1% of days the loss can be larger.
+# ES ≈ 37.87: conditional on being in the worst 1% of days (i.e., beyond VaR), the average 1-day loss is about 37.87.
+
+# Hist. sim
+# VaR ≈ 38.35: based on the historical loss distribution, about 1% of days can have losses exceeding ~38.35.
+# ES ≈ 56.27: within the worst 1% of days, the average loss rises to about 56.27.
+```
+### 4 Graphical analysis
+```{r}
+## Compute historical losses 
+S. <- as.numeric(tail(S, n = 1)) # pick out last available stock prices ("today")
+w. <- lambda * S. # weights tilde{w}
+L <- loss_operator(X, weights = w.) # historical losses
+summary(L) # get important statistics about the losses
+```
+
+#___________
+### 9.18 Standard methods for market risk
+```{r}
+install.packages("sfsmisc")   # cách chuẩn
+library(RColorBrewer)
+library(rugarch)
+library(sfsmisc) # for eaxis()
+library(nvmix) # for rNorm(), fitStudent() and rStudent()
+library(zoo) # for na.fill()
+library(xts) # for xts()
+library(ADGofTest) # for ad.test()
+library(qrmdata)
+library(qrmtools)
+doPDF <- require(crop)
+options(digits = 10)
+```
+
+## a), b) Compute the risk-factor changes
+## Data preparation
+```{r}
+data(EURSTX_const)
+time <- c("2000-01-03", "2009-12-31")
+S <- EURSTX_const[paste0(time, collapse = "/"), c("BMW.DE", "SIE.DE")] 
+colnames(S) <- c("BMW", "SIE")
+S <- na.omit(S)
+```
+
+## Compute the risk-factor changes
+```{r}
+X <- returns(S)
+X <- as.matrix(X)
+```
+
+## c) Ingredients required for *all* methods
+```{r}
+loss_operator <- function(x, weights)
+    -rowSums(expm1(x) * matrix(weights, nrow = nrow(x), ncol = length(weights), byrow = TRUE))
+
+risk_measure <- function(S, lambda, alpha,
+                         method = c("Var.Cov", "hist.sim", "MC.N", "MC.t", "POT"),
+                         ...)
+{
+    ## Input checks and conversions
+    if(!is.matrix(S)) S <- rbind(S, deparse.level = 0L) 
+    stopifnot(0 < alpha, alpha < 1,
+              length(lambda) == ncol(S), lambda > 0) 
+    method <- match.arg(method) 
+
+    ## Ingredients required for *all* methods
+    X <- returns(S) 
+    if(!length(X)) stop("'S' should have more than just one line") 
+    S. <- as.numeric(tail(S, n = 1)) 
+    w. <- lambda * S. 
+
+    ## Method switch 
+    switch(method,
+           
+# variance-covariance method           
+           "Var.Cov" = { 
+               mu <- colMeans(X) 
+               Sigma <- var(X) 
+               L.Delta.mean <- -sum(w. * mu)
+               L.Delta.sd <- sqrt(t(w.) %*% Sigma %*% w.) 
+
+## Compute VaR and ES and return
+               qa <- qnorm(alpha)
+               list(VaR = L.Delta.mean + L.Delta.sd * qa,
+                    ES  = L.Delta.mean + L.Delta.sd * dnorm(qa) / (1-alpha),
+                    mu    = mu, 
+                    Sigma = Sigma) 
+           },
+
+# historical simulation method
+           "hist.sim" = { 
+               L <- loss_operator(X, weights = w.) 
+               list(VaR = VaR_np(L, alpha),
+                    ES  =  ES_np(L, alpha))
+           },
+# Monte Carlo based on a fitted multivariate normal
+           "MC.N" = { 
+               stopifnot(hasArg(N)) 
+               N <- list(...)$N 
+               mu <- colMeans(X) 
+               Sigma  <- var(X) 
+               X. <- rNorm(N, loc = mu, scale = Sigma) 
+               L <- loss_operator(X., weights = w.) 
+
+## Compute VaR and ES and return
+               list(VaR = VaR_np(L, alpha), 
+                    ES  =  ES_np(L, alpha), 
+                    mu    = mu,
+                    Sigma = Sigma) 
+           },
+
+# Monte Carlo based on a fitted multivariate t
+           "MC.t" = { 
+               stopifnot(hasArg(N)) 
+               N <- list(...)$N 
+               fit <- fitStudent(X) 
+               X. <- rStudent(N, df = fit$df, loc = fit$loc, scale = fit$scale) 
+               L <- loss_operator(X., weights = w.) 
+
+## Compute VaR and ES and return
+               list(VaR = VaR_np(L, alpha), 
+                    ES  =  ES_np(L, alpha), 
+                    mu    = fit$loc, 
+                    sigma = fit$scale, 
+                    df    = fit$df) 
+           },
+
+ # Generalized Pareto distribution (GPD)
+           "POT" = { 
+               stopifnot(hasArg(q)) 
+               L. <- loss_operator(X, weights = w.)
+               u <- quantile(L., probs = list(...)$q, names = FALSE) 
+               excess <- L.[L. > u] - u
+               fit <- fit_GPD_MLE(excess) 
+               xi <- fit$par[["shape"]] 
+               beta <- fit$par[["scale"]]
+               if(xi <= 0) stop("Risk measures only implemented for xi > 0.")
+               
+## Compute semi-parametric VaR and ES estimates
+               Fbu <- length(excess) / length(L.) 
+               VaR <- u + (beta/xi)*(((1-alpha)/Fbu)^(-xi)-1) 
+               ES <- (VaR + beta-xi*u) / (1-xi) 
+               if(xi >= 1) ES <- Inf 
+               
+## Return
+               list(VaR = VaR, 
+                    ES  = ES, 
+                    xi  = xi, 
+                    beta = beta, 
+                    converged = fit$converged, 
+                    u = u, 
+                    excess = excess) 
+           },
+           stop("Wrong 'method'"))
+}
+```
+
+## d) VaR and ES for all methods
+```{r}
+lambda <- c(1, 10)
+alpha <- 0.99 
+N <- 1e4 # Monte Carlo sample size
+
+## Estimate VaR and ES with the various methods
+set.seed(271) 
+
+var.cov  <- risk_measure(S, lambda = lambda, alpha = alpha, method = "Var.Cov")
+hist.sim <- risk_measure(S, lambda = lambda, alpha = alpha, method = "hist.sim")
+MC.N     <- risk_measure(S, lambda = lambda, alpha = alpha, method = "MC.N", N = N)
+POT      <- risk_measure(S, lambda = lambda, alpha = alpha, method = "POT",  N = N, q = 0.9)
+MC.t     <- risk_measure(S, lambda = lambda, alpha = alpha, method = "MC.t", N = N)
+
+## Pick out VaR and ES for all methods
+rm <- rbind("MC (normal)"    = unlist(MC.N[c("VaR", "ES")]),
+            "Var.-cov."      = unlist(var.cov[c("VaR", "ES")]),
+            "Hist. sim."     = unlist(hist.sim[c("VaR", "ES")]),
+            "POT"            = unlist(POT [c("VaR", "ES")]),
+            "MC (Student t)" = unlist(MC.t[c("VaR", "ES")]))
+round(rm, digits = 4)
+```
+
+## e) Compute historical losses 
+```{r}
+S. <- as.numeric(tail(S, n = 1)) 
+w. <- lambda * S. 
+L <- loss_operator(X, weights = w.) 
+summary(L) # get important statistics about the losses
+```
+
+#___________
+### Bài thầy chữa
+```{r}
+# ĐỀ BÀI
+# DJ [2006-01-03/2016-31-12]
+# AAPL, IBM, INTC
+# lambda 2 1 2
+```
+
+## a), b) Compute the risk-factor changes
+## Data preparation
+```{r}
+data(DJ_const)
+time <- c("2006-01-03", "2016-12-31")
+S <- DJ_const[paste0(time, collapse = "/"), c("AAPL", "IBM", "INTC")] # pick out data (data.frame)
+colnames(S) <- c("AAPL", "IBM", "INTC")
+S <- na.omit(S)  
+```
+
+## c) Ingredients required for *"Var.Cov"& "hist.sim"* methods
+```{r}
+loss_operator <- function(x, weights)
+    -rowSums(expm1(x) * matrix(weights, nrow = nrow(x), ncol = length(weights), byrow = TRUE))
+
+risk_measure <- function(S, lambda, alpha,
+                         method = c("Var.Cov", "hist.sim"),
+                         ...)
+{
+    ## Input checks and conversions
+    if(!is.matrix(S)) S <- rbind(S, deparse.level = 0L) 
+    stopifnot(0 < alpha, alpha < 1,
+              length(lambda) == ncol(S), lambda > 0) 
+    method <- match.arg(method) 
+
+    ## Ingredients required for *all* methods
+    X <- returns(S) 
+    if(!length(X)) stop("'S' should have more than just one line") 
+    S. <- as.numeric(tail(S, n = 1)) 
+    w. <- lambda * S. 
+
+    ## Method switch 
+    switch(method,
+           
+# variance-covariance method           
+           "Var.Cov" = { 
+               mu <- colMeans(X) 
+               Sigma <- var(X) 
+               L.Delta.mean <- -sum(w. * mu)
+               L.Delta.sd <- sqrt(t(w.) %*% Sigma %*% w.) 
+
+## Compute VaR and ES and return
+               qa <- qnorm(alpha)
+               list(VaR = L.Delta.mean + L.Delta.sd * qa,
+                    ES  = L.Delta.mean + L.Delta.sd * dnorm(qa) / (1-alpha),
+                    mu    = mu, 
+                    Sigma = Sigma) 
+           },
+
+# historical simulation method
+           "hist.sim" = { 
+               L <- loss_operator(X, weights = w.) 
+               list(VaR = VaR_np(L, alpha),
+                    ES  =  ES_np(L, alpha))
+           },
+           stop("Wrong 'method'"))
+}
+```
+
+## d) VaR and ES *"Var.Cov"& "hist.sim"* methods
+```{r}
+lambda <- c(2,1,2) # thầy cho
+alpha <- 0.99 # confidence levels for computing the risk measures
+
+## Estimate VaR and ES with the various methods
+var.cov  <- risk_measure(S, lambda = lambda, alpha = alpha, method = "Var.Cov")
+
+hist.sim <- risk_measure(S, lambda = lambda, alpha = alpha, method = "hist.sim")
+
+## Pick out VaR and ES for all methods
+rm <- rbind("Var.-cov."      = unlist(var.cov[c("VaR", "ES")]),
+            
+            "Hist. sim."     = unlist(hist.sim[c("VaR", "ES")]))
+round(rm, digits = 4)
+```
+`
+
