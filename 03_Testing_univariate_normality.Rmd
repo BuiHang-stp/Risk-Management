@@ -1,0 +1,49 @@
+---
+title: "03_Testing_univariate_normality"
+EX: "Tests specifically for the normal distribution"
+---
+
+```{r}
+library(xts)
+library(qrmdata)
+library(qqtest)
+library(copula)
+library(qrmtools)
+library(parallel)
+library(sfsmisc)
+library(nvmix)
+library(nortest)
+library(ADGofTest)
+library(moments)
+library(rugarch)
+library(zoo)
+
+```
+
+```{r}
+data("FTSE")
+Fdata <- FTSE['1994-01-01/1999-12-31']
+Freturns <- -returns(Fdata)
+```
+
+### Tests specifically for the normal distribution
+```{r}
+(sh <- shapiro.test(as.numeric(Freturns))) # Shapiro--Wilk
+(ag <- agostino.test(as.numeric(Freturns))) # D'Agostino's test
+(jb <- jarque.test(as.numeric(Freturns))) # Jarque--Bera test
+
+```
+## Aggregating log returns by summation for each column
+## Weekly
+```{r}
+Freturns.w <- apply.weekly(Freturns, FUN = colSums)
+dim(Freturns.w)
+```
+
+# Chạy week
+```{r}
+(sh <- shapiro.test(as.numeric(Freturns.w))) # Shapiro--Wilk
+(ag <- agostino.test(as.numeric(Freturns.w))) # D'Agostino's test
+(jb <- jarque.test(as.numeric(Freturns.w))) # Jarque--Bera test
+```
+

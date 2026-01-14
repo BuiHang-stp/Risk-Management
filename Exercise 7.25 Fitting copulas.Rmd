@@ -1,0 +1,46 @@
+---
+title: "Exercise 7.25 Fitting copulas"
+---
+```{r}
+library(copula)
+library(xts)
+library(qrmtools)
+library(qrmdata)
+
+doPDF <- require(crop)
+options(digits = 10)
+
+```
+
+```{r}
+data(DJ_const)
+tickers <- c("AAPL", "CSCO", "DIS", "IBM", "INTC", "MCD", "MSFT", "NKE", "PG", "WMT")
+S <- DJ_const['2005-01-01/2012-12-31', tickers]
+d <- ncol(S)
+
+```
+## a) Build daily log-returns  and their pseudo-observations
+```{r}
+X.d <- returns(S)
+U.d <- pobs(X.d)
+
+```
+## Fitting
+## Normal copula
+
+```{r}
+Ncop <- normalCopula(dim = d, dispstr = "un")
+system.time(fit.N.d <- fitCopula(Ncop, data = as.matrix(U.d))) 
+```
+## t copula
+```{r}
+tcop <- tCopula(dim = d, dispstr = "un")
+system.time(fit.t.d <- fitCopula(tcop, data = as.matrix(U.d))) # ~= 3min
+```
+## Fitted parameters
+```{r}
+p2P(coef(fit.N.d)) # correlation matrix of the fitted normal copula
+p2P(tail(coef(fit.t.d), n = -1)) # correlation matrix of the fitted t copula
+tail(coef(fit.t.d), n = 1) # degrees of freedom of the fitted t copula
+```
+

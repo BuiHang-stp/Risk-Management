@@ -1,0 +1,125 @@
+---
+title: "Exercise 6.23 Fitting generalized hyperbolic distributions"
+---
+```{r}
+library(nvmix) # for rNorm(), rStudent()
+library(copula)
+library(xts)
+library(qrmtools)
+library(qrmdata)
+library(ghyp) # for generalized hyperbolic distributions
+
+doPDF <- require(crop)
+options(digits = 10)
+```
+```{r}
+## Data preparation
+data(DJ_const)
+tickers <- c("AAPL", "CSCO", "DIS", "IBM", "INTC", "MCD", "MSFT", "NKE", "PG", "WMT")
+S <- DJ_const['2005-01-01/2012-12-31', tickers]
+d <- ncol(S)
+X.d <- returns(S) # build daily  log-returns of the constituents
+
+```
+## a)  
+
+## Univariate fitting
+
+```{r}
+fit.uv <- c(apply(X.d, 2, fit.tuv,    symmetric = TRUE,  silent = TRUE), # symmetric t
+            apply(X.d, 2, fit.NIGuv,  symmetric = TRUE,  silent = TRUE), # symmetric NIG
+            apply(X.d, 2, fit.hypuv,  symmetric = TRUE,  silent = TRUE), # symmetric H
+            apply(X.d, 2, fit.ghypuv, symmetric = TRUE,  silent = TRUE), # symmetric GH
+            apply(X.d, 2, fit.VGuv,   symmetric = TRUE,  silent = TRUE), # symmetric VG
+
+            apply(X.d, 2, fit.tuv,    symmetric = FALSE, silent = TRUE), # asymmetric t
+            apply(X.d, 2, fit.NIGuv,  symmetric = FALSE, silent = TRUE), # asymmetric NIG
+            apply(X.d, 2, fit.hypuv,  symmetric = FALSE, silent = TRUE), # asymmetric H
+            apply(X.d, 2, fit.ghypuv, symmetric = FALSE, silent = TRUE), # asymmetric GH
+            apply(X.d, 2, fit.VGuv,   symmetric = FALSE, silent = TRUE)) # asymmetric VG
+
+```
+## Summary of results
+```{r}
+res.uv <- matrix(sapply(fit.uv, function(x) x@aic), nrow = length(tickers), ncol = 10)
+rownames(res.uv) <- tickers
+model.names <- c("t.sym",  "NIG.sym",  "H.sym",  "GH.sym",  "VG.sym",
+                 "t.asym", "NIG.asym", "H.asym", "GH.asym", "VG.asym")
+colnames(res.uv) <- model.names
+model.names[apply(res.uv, 1, which.min)] # for each stock, which is the model with smallest AIC? 
+
+```
+## b)
+
+## Multivariate fitting
+
+```{r}
+fit.mv <- c(fit.tmv   (X.d, symmetric = TRUE,  silent = TRUE), # symmetric t
+            fit.NIGmv (X.d, symmetric = TRUE,  silent = TRUE), # symmetric NIG
+            fit.hypmv (X.d, symmetric = TRUE,  silent = TRUE), # symmetric H
+            fit.ghypmv(X.d, symmetric = TRUE,  silent = TRUE), # symmetric GH
+            fit.VGmv  (X.d, symmetric = TRUE,  silent = TRUE), # symmetric VG
+
+            fit.tmv   (X.d, symmetric = FALSE, silent = TRUE), # asymmetric t
+            fit.NIGmv (X.d, symmetric = FALSE, silent = TRUE), # asymmetric NIG
+            fit.hypmv (X.d, symmetric = FALSE, silent = TRUE), # asymmetric H
+            fit.ghypmv(X.d, symmetric = FALSE, silent = TRUE), # asymmetric GH
+            fit.VGmv  (X.d, symmetric = FALSE, silent = TRUE)) # asymmetric VG
+
+```
+## Summary of results
+```{r}
+res.mv <- sapply(fit.mv, function(x) x@aic)
+names(res.mv) <- model.names
+which.min(res.mv) # => the symmetric t fits best according to AIC
+
+```
+## c)
+```{r}
+## Extract fitted parameters
+param <- coef(fit.mv[[which.min(res.mv)]], type = "chi.psi")
+lambda <- param$lambda
+chi <- param$chi
+psi <- param$psi
+mu <- param$mu
+Sig <- param$sigma
+gamma <- param$gamma
+
+```
+
+```{r}
+## Parameters
+b <- rep(1, d) # vector of weights
+mu. <- drop(t(b) %*% mu)
+sig. <- sqrt(drop(t(b) %*% Sig %*% b))
+gamma. <- drop(t(b) %*% gamma)
+
+```
+
+```{r}
+## Implied distribution of daily portfolio returns
+ret.distr <- ghyp(lambda = lambda, chi = chi, psi = psi,
+                  mu = mu., sigma = sig., gamma = gamma.)
+
+```
+## Evaluate fitted GH density and a non-parametric density estimate (as a comparison)
+```{r}
+ret <- drop(X.d %*% b) # returns
+ran <- range(ret) # range where to plot
+x <- seq(ran[1], ran[2], length.out = 201) # points where to evaluate fitted GH density
+dens.fit <- dghyp(x, object = ret.distr) # evaluate fitted GH density there
+dens.emp <- density(ret) # (empirical) density estimate
+
+```
+
+```{r}
+## Plot
+ylim <- c(0, max(dens.emp$y, dens.fit))
+plot(x, dens.fit, type = "l", ylim = ylim, col = "royalblue3",
+     ylab = "Implied distribution of daily portfolio returns")
+lines(dens.emp)
+legend("topright", bty = "n", lty = c(1, 1), col = c("black", "royalblue3"),
+       legend = c("Non-parametric estimate", "Fitted GH density"))
+
+```
+

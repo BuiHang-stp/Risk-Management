@@ -1,0 +1,149 @@
+---
+title: "Chap 4. Fitting GARCH models"
+EX: "Tương tự 4.16 ARMA (1,1) & GARCH(1,1)"
+---
+```{r}
+library(xts)
+library(rugarch)
+library(qrmdata)
+library(qrmtools)
+doPDF <- require(crop)
+options(digits = 10)
+```
+
+```{r}
+## Dow Jones stock price data
+data("DJ_const")
+str(DJ_const)
+
+## extract AAPL stock a time period and build log-returns
+AAPLdata <- DJ_const['1990-01-01/1999-12-31',"AAPL"]
+X <- -returns(AAPLdata)
+```
+### a) GARCH(1,1)
+### Fit a GARCH(1,1) model with normal innovations 
+```{r}
+uspec.N <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(0,0 ), # AR(1) part
+                                        include.mean = TRUE), # with mean
+                      distribution.model = "norm") # standard normal innovations
+(fit.N <- ugarchfit(spec = uspec.N, data = X)) # fit
+```
+###  Fit a GARCH(1,1) model with Student t innovations 
+```{r}
+uspec.t <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(0,0), include.mean = TRUE),
+                      distribution.model = "std") # standardized Student t innovations
+(fit.t <- ugarchfit(spec = uspec.t, data = X)) # fit
+```
+###  Fit a GARCH(1,1) model with Skewed Student t innovations (Skewed Student t distribution - sstd)
+```{r}
+uspec.st <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(0,0), include.mean = TRUE),
+                      distribution.model = "sstd")
+(fit.st <- ugarchfit(spec = uspec.st, data = X)) # fit
+```
+### b) ARMA (1,1) + GARCH(1,1)
+```{r}
+uspec.N1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(1,1), # AR(1) part
+                                        include.mean = TRUE), # with mean
+                      distribution.model = "norm") # standard normal innovations
+(fit.N1 <- ugarchfit(spec = uspec.N1, data = X)) # fit
+```
+### Fit a ARMA (1,1) + GARCH(1,1) model with Student t innovations (Student t distribution - std)
+```{r}
+uspec.t1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(1,1), include.mean = TRUE),
+                      distribution.model = "std") # standardized Student t innovations
+(fit.t1 <- ugarchfit(spec = uspec.t1, data = X)) # fit
+```
+### Fit a ARMA (1,1) + GARCH(1,1) model with with Skewed Student t innovations (Skewed Student t distribution - sstd)
+```{r}
+uspec.st1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                      mean.model = list(armaOrder = c(1,1), include.mean = TRUE),
+                      distribution.model = "sstd")
+(fit.st1 <- ugarchfit(spec = uspec.st1, data = X)) # fit
+
+```
+
+### Comparing 2 models  
+###  Likelihood-ratio test for comparing the two models ##
+```{r}
+## The likelihood ratio statistic is twice the difference between the log-likelihoods
+
+LL.N <- fit.N@fit$LLH # log-likelihood of the model based on normal innovations
+LL.N1 <- fit.N1@fit$LLH # log-likelihood of the model based on normal innovations
+
+LL.t <- fit.t@fit$LLH # log-likelihood of the model based on t innovations
+LL.t1 <- fit.t1@fit$LLH # log-likelihood of the model based on t innovations
+
+LL.st <- fit.st@fit$LLH # log-likelihood of the model based on t innovations
+LL.st1 <- fit.st1@fit$LLH # log-likelihood of the model based on t innovations
+```
+###  Using Akaike's information criterion to compare the two models
+```{r}
+(AIC.N <- 2*length(fit.N@fit$coef) - 2*LL.N)
+(AIC.N1 <- 2*length(fit.N1@fit$coef) - 2*LL.N1)
+
+```
+
+```{r}
+(AIC.t <- 2*length(fit.t@fit$coef) - 2*LL.t)
+(AIC.t1 <- 2*length(fit.t1@fit$coef) - 2*LL.t1)
+
+```
+
+```{r}
+(AIC.st <- 2*length(fit.st@fit$coef) - 2*LL.st)
+(AIC.st1 <- 2*length(fit.st1@fit$coef) - 2*LL.st1)
+
+```
+
+### c) VaR
+## VaR chung (kco ngày cụ thể)
+```{r}
+VaR.99 <- quantile(fit.t, probs = 0.99) # estimated VaR at level 99%
+```
+
+```{r}
+tail(VaR.99)
+```
+
+```{r}
+VaR.99['1999-12-31']
+```
+
+### d) GARCH volatility estimate
+## EWMA estimate of volatility
+```{r}
+uspec.EWMA <- ugarchspec(variance.model = list(model = "iGARCH", garchOrder = c(1, 1)),
+                         mean.model = list(armaOrder = c(0, 0), include.mean = TRUE))
+
+fit <- ugarchfit(spec = uspec.EWMA, data = X)  # fit
+vola.EWMA <- as.numeric(sigma(fit)) # extract vola; in-sample (sigma_t)
+
+```
+
+```{r}
+vola = sigma(fit)
+```
+## Comparison with the GARCH volatility estimate
+```{r}
+time <- index(vola)
+plot(time, as.numeric(vola), type = "l",
+     xlab = "Time t", ylab = expression("Estimated volatility"~(sigma[t])))
+lines(time, vola.EWMA, col = "royalblue3")
+legend("topleft", bty = "n", lty = rep(1, 2), col = c("black", "royalblue3"),
+       legend = c("GARCH(1,1) volatility estimate", "EWMA estimate of volatility"))
+
+## Relative difference
+plot(time, abs(vola - vola.EWMA)/abs(vola), type = "l", xlab = "Time t",
+     ylab = "Relative difference between the two volatility estimates")
+
+```
+## Summary statistics of the relative differencea => The relative difference between the two estimated volatilities
+```{r}
+summary(as.numeric(abs(vola - vola.EWMA)/abs(vola)))
+```
+
